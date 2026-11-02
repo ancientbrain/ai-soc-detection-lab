@@ -1,0 +1,28 @@
+# Secrets - never commit
+.env
+*.env
+*.key
+*.pem
+secrets*
+config.local.*
+
+# Virtual machine and installer files (huge, never belong in the repo)
+*.iso
+*.vmdk
+*.vmx
+*.vmxf
+*.vmsd
+*.nvram
+*.vmem
+*.vmss
+*.msi
+*.exe
+
+# Raw log exports (can be large; commit small curated samples only)
+*.evtx
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
