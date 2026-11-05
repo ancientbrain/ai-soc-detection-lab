@@ -17,3 +17,12 @@
 - Troubleshooting: both adapters had 169.254.x.x addresses because the VMware DHCP service (VMnetDHCP) was stopped on the host; started it and renewed the leases
 - Windows Update completed; snapshot "Clean install" taken
 - Next: Day 2 - install Sysmon with a community config, enable PowerShell and command-line logging
+
+## 2026-11-04 (Day 2) - Sysmon and Windows logging
+- Installed Sysmon 15.22 with the sysmon-modular default config (release configs-a45dedb13a43), SHA256 verified against the published SHA256SUMS
+- Challenge: sysmon-modular no longer keeps a prebuilt sysmonconfig.xml in the repo (raw link returned 404); found it in the GitHub release assets via the API
+- Confirmed the config logs LSASS process access (Event 10) tagged T1003, needed for credential-dumping detection
+- Enabled PowerShell Script Block Logging (4104), command line in process creation (4688), and auditing for Process Creation and User Account Management (4720)
+- Verified Sysmon events 3, 13, 22 plus 4104 and 4688 with command lines
+- Snapshot "Sysmon + logging" taken
+- Next: Day 3 - install Splunk Enterprise on the host, create index, enable receiving on 9997
