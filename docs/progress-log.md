@@ -26,3 +26,10 @@
 - Verified Sysmon events 3, 13, 22 plus 4104 and 4688 with command lines
 - Snapshot "Sysmon + logging" taken
 - Next: Day 3 - install Splunk Enterprise on the host, create index, enable receiving on 9997
+
+## 2026-11-05 (Day 3) - Splunk Enterprise (SIEM)
+- Installed Splunk Enterprise 10.6.1.1 on the host; created index "sysmon"; enabled receiving on TCP 9997
+- Host firewall rule allows 9997 only from the host-only subnet 192.168.38.0/24; VM reachability verified (TcpTestSucceeded from 192.168.38.128)
+- Installed Splunk Add-on for Sysmon 5.0.1 and Splunk Add-on for Microsoft Windows 12.0.0 via the Splunk CLI (in-app browser returned errors)
+- Saved receiver configs to configs/splunk/indexer/; report updated to v0.3
+- Next: Day 4 - install the Universal Forwarder in the VM, configure inputs, verify events in Splunk

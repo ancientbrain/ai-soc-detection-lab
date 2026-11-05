@@ -3,8 +3,8 @@
 **Author:** Satwika [Last Name]
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Living report, version 0.2
-**Last updated:** November 5, 2026 (end of Phase 1, Day 2)
+**Document status:** Living report, version 0.3
+**Last updated:** November 5, 2026 (end of Phase 1, Day 3)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
 
@@ -14,7 +14,7 @@
 
 *[Provisional; to be finalized at project completion.]*
 
-Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the instrumented victim environment is complete and verified; detection, evaluation, and results are pending.
+Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the instrumented victim environment and the SIEM receiver are deployed and verified; log forwarding, detection, evaluation, and results are pending.
 
 ---
 
@@ -42,7 +42,7 @@ The project follows a 22-day plan at roughly two hours per day.
 
 | Phase | Focus | Planned dates | Status |
 |---|---|---|---|
-| 1 | Build the lab | Nov 3 – Nov 7, 2026 | In progress (Days 1–2 complete) |
+| 1 | Build the lab | Nov 3 – Nov 7, 2026 | In progress (Days 1–3 complete) |
 | 2 | Attack, detect, investigate | Nov 8 – Nov 12 | Not started |
 | 3 | AI-assisted triage | Nov 13 – Nov 17 | Not started |
 | 4 | Detection-as-Code and polish | Nov 18 – Nov 21 | Not started |
@@ -83,7 +83,7 @@ LLMs can summarize alerts, suggest likely techniques, and recommend next steps, 
 ```mermaid
 flowchart LR
     subgraph Host["Host PC (Windows, 16 GB RAM)"]
-        SPL["Splunk Enterprise<br/>receiver on 192.168.38.1:9997<br/>(Phase 1, Day 3)"]
+        SPL["Splunk Enterprise 10.6.1.1<br/>receiver on 192.168.38.1:9997<br/>index: sysmon"]
         PY["Python triage assistant<br/>(Phase 3)"]
     end
     subgraph VM["SOC-Win11 victim VM"]
@@ -110,7 +110,9 @@ flowchart LR
 | Windows 11 Enterprise Evaluation | Build 26300.9457 (90-day evaluation) | VM `SOC-Win11` | Victim endpoint |
 | Sysmon | 15.22 | VM | Primary endpoint telemetry |
 | sysmon-modular config | Release `configs-a45dedb13a43`, default balanced config | VM | Defines Sysmon event filtering |
-| Splunk Enterprise | *[Pending, Day 3]* | Host | SIEM: indexing, search, alerting |
+| Splunk Enterprise | 10.6.1.1 (60-day Enterprise trial, convertible to Free license) | Host | SIEM: indexing, search, alerting |
+| Splunk Add-on for Sysmon | 5.0.1 (`Splunk_TA_microsoft_sysmon`) | Host | Field extraction for Sysmon events |
+| Splunk Add-on for Microsoft Windows | 12.0.0 (`Splunk_TA_windows`) | Host | Field extraction for Security and PowerShell events |
 | Splunk Universal Forwarder | *[Pending, Day 4]* | VM | Log shipping |
 | Atomic Red Team | *[Pending, Phase 2]* | VM | Adversary emulation |
 | Gemini API | *[Pending, Phase 3]* | External | LLM for triage experiments |
@@ -212,9 +214,40 @@ The 4688 evidence also illustrates a triage-relevant field. `TokenElevationTypeL
 
 A second snapshot, **"Sysmon + logging,"** was taken, and the verified configuration was committed to `configs/sysmon/sysmonconfig.xml`, with a matching hash confirmed on the host.
 
-#### 4.1.4 SIEM deployment (Days 3–5) *[Planned]*
+#### 4.1.4 SIEM deployment (Day 3, November 5)
 
-Install Splunk Enterprise on the host, create the `sysmon` index, enable receiving on TCP 9997, install the Splunk Add-on for Sysmon, deploy the Universal Forwarder to the VM, configure inputs for the Sysmon, Security, and PowerShell Operational logs, permit inbound 9997 from 192.168.38.0/24 on the host firewall, and verify ingestion with `index=sysmon | stats count by EventCode`.
+Splunk Enterprise 10.6.1.1 was installed on the host from the official Windows MSI with default options (installed to `C:\Program Files\Splunk`, running as a Windows service). The 60-day Enterprise trial converts to the Free license (500 MB/day), which comfortably exceeds the lab's expected volume. Configuration then proceeded as follows:
+
+1. **Index.** An events index named `sysmon` was created to hold all lab telemetry. Every detection will be scoped to `index=sysmon`.
+2. **Receiving.** A receiving input was enabled on TCP 9997, the conventional port for Splunk-to-Splunk forwarding.
+3. **Host firewall.** An inbound rule was created that allows TCP 9997 **only** from the host-only subnet:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Splunk receiver 9997 (lab host-only)" -Direction Inbound -Protocol TCP -LocalPort 9997 -RemoteAddress 192.168.38.0/24 -Action Allow -Profile Any
+   ```
+
+   This applies least privilege: the home network and other interfaces cannot reach the receiver.
+4. **Add-ons.** The Splunk Add-on for Sysmon (5.0.1) and the Splunk Add-on for Microsoft Windows (12.0.0) were installed to provide search-time field extraction (for example `CommandLine`, `Image`, `TargetImage`). Because Splunk Web's in-product app browser returned errors (Section 6), both packages were downloaded from Splunkbase, their provenance was checked (official site, publisher Splunk), and they were installed with the Splunk CLI:
+
+   ```powershell
+   & "C:\Program Files\Splunk\bin\splunk.exe" install app <package>
+   & "C:\Program Files\Splunk\bin\splunk.exe" restart
+   ```
+
+**Verification evidence**
+
+| Check | Expected | Observed |
+|---|---|---|
+| Receiver listening | TCP 9997 in LISTENING state | `0.0.0.0:9997 LISTENING` |
+| Firewall rule | Enabled, inbound, allow | `Splunk receiver 9997 (lab host-only)`: True, Inbound, Allow |
+| Reachability from VM | `TcpTestSucceeded: True` from a 192.168.38.x source | True; source 192.168.38.128 via the VM's host-only adapter |
+| Add-ons | Installed and enabled | `Splunk_TA_microsoft_sysmon` and `Splunk_TA_windows`: ENABLED |
+
+The receiver-side Splunk configuration (`indexes.conf`, `inputs.conf`) is stored in `configs/splunk/indexer/`.
+
+#### 4.1.5 Forwarder deployment and end-to-end validation (Days 4–5) *[Planned]*
+
+Install the Splunk Universal Forwarder on the VM, configure inputs for the Sysmon Operational (`renderXml = true`), Security, and PowerShell Operational logs to `index = sysmon`, point output to 192.168.38.1:9997, verify ingestion with `index=sysmon | stats count by EventCode`, and take a "Logging ready" snapshot.
 
 ### 4.2 Phase 2: Adversary emulation and detection *[Planned]*
 
@@ -267,19 +300,24 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | 3 | No network addresses in VM | Both adapters had APIPA addresses (169.254.x.x); no internet | The host's VMware DHCP service (`VMnetDHCP`) was stopped despite automatic start | Started the service and renewed the leases (`ipconfig /release`, `/renew`) | A 169.254.x.x address always means DHCP did not answer; check the DHCP source first. |
 | 4 | Sysmon config download returned 404 | Raw GitHub URL for `sysmonconfig.xml` not found | sysmon-modular no longer commits the generated config to the repository | Queried the GitHub API, found the config among the release assets, and verified it against SHA256SUMS | Tutorials go stale; consult the authoritative source and verify integrity. |
 | 5 | Push rejected | `remote: fatal error in commit_refs` | GitHub server-side error | Commit preserved locally; push succeeded unchanged the next day (Nov 5) once the service recovered | Distinguish server-side from client-side failures before troubleshooting locally; Git's local-first design means a failed push never loses work. |
+| 6 | Splunk Web app browser unavailable | "Page not found" and generic error pages when opening the app browser and the Manage Apps URL | Not fully diagnosed; a Splunk Web issue in this 10.6.1.1 installation | Installed the add-ons from Splunkbase packages with the Splunk CLI | Keep a CLI fallback; file-based installation is also standard on production SIEMs without internet access. |
+| 7 | Browser warning on add-on packages | `.tgz` downloads flagged as potentially harmful | Generic browser heuristic for uncommon archive types | Confirmed the official source and publisher before keeping the files | Base trust decisions on provenance, not on the warning alone. |
+| 8 | CLI command appeared to hang | `splunk display app \| Select-String` printed nothing for minutes | The CLI's login prompt was hidden by the output filter | Authenticated first with `splunk login`, then reran the command | Authenticate before piping interactive CLI output. |
+| 9 | Verification run on the wrong machine | Connectivity tests showed the host's own addresses | Commands entered in the host terminal instead of the VM | Reran in the VM after checking the prompt (`satu7` = host, `SOC-WIN11` = VM) | Always confirm which machine a terminal belongs to; critical once attack simulations begin. |
 
 ---
 
 ## 7. Security, Safety, and Ethical Controls
 
 1. **Isolation.** Adversary emulation runs only inside the VM. The NAT adapter will be disconnected before testing, leaving only the host-only link.
-2. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install" and "Sysmon + logging."
-3. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
-4. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, the original project repositories), and published hashes are verified where available.
-5. **Data handling.** Only synthetic lab telemetry is ever sent to the LLM; no real organizational or personal data enters the lab.
-6. **Secrets hygiene.** API keys will be stored in environment variables and excluded by `.gitignore`; the repository stays private until the core project is complete.
-7. **Licensing.** Windows 11 Enterprise is used under Microsoft's evaluation terms for non-production testing.
-8. **Human oversight.** The triage assistant is advisory; every recommendation requires analyst approval.
+2. **Least-privilege network access.** The host firewall admits TCP 9997 only from the host-only subnet 192.168.38.0/24.
+3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install" and "Sysmon + logging."
+4. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
+5. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, Splunk and Splunkbase, the original project repositories), and published hashes are verified where available.
+6. **Data handling.** Only synthetic lab telemetry is ever sent to the LLM; no real organizational or personal data enters the lab.
+7. **Secrets hygiene.** API keys will be stored in environment variables and excluded by `.gitignore`; the repository stays private until the core project is complete.
+8. **Licensing.** Windows 11 Enterprise is used under Microsoft's evaluation terms for non-production testing.
+9. **Human oversight.** The triage assistant is advisory; every recommendation requires analyst approval.
 
 ---
 
@@ -291,7 +329,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 
 ## 9. Limitations and Future Work
 
-*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Future work may include an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
+*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025; if the host runs Windows 11, it may fall outside the officially listed platforms. *[Confirm host OS with `winver`.]* Future work may include an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
 
 ---
 
@@ -319,14 +357,16 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | Nov 2, 2026 | Day 0: Preparation | Hardware confirmed (16 GB RAM, more than 200 GB free); VMware networks verified; repository initialized |
 | Nov 4, 2026 | Day 1: Victim VM | VM built, networking repaired, updated, "Clean install" snapshot |
 | Nov 4, 2026 | Day 2: Instrumentation | Sysmon and Windows auditing deployed and verified; "Sysmon + logging" snapshot |
+| Nov 5, 2026 | Day 3: SIEM | Splunk Enterprise 10.6.1.1 installed; `sysmon` index; receiving on 9997 with a host-only firewall rule; Sysmon and Windows add-ons installed via CLI |
 
 ## Appendix B: Artifact Index
 
 | Artifact | Repository path | Status |
 |---|---|---|
 | Sysmon configuration (verified) | `configs/sysmon/sysmonconfig.xml` | Committed and pushed |
-| Progress log | `docs/progress-log.md` | Current through Day 2 |
-| Splunk inputs/outputs configuration | `configs/splunk/` | Pending |
+| Splunk receiver configuration | `configs/splunk/indexer/` | Added Day 3 |
+| Progress log | `docs/progress-log.md` | Current through Day 3 |
+| Universal Forwarder configuration | `configs/splunk/forwarder/` | Pending (Day 4) |
 | Detection searches | `detections/spl/` | Pending |
 | Sigma rules | `rules/` | Pending |
 | Triage assistant | `triage/` | Pending |
