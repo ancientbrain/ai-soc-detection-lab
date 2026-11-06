@@ -33,3 +33,12 @@
 - Installed Splunk Add-on for Sysmon 5.0.1 and Splunk Add-on for Microsoft Windows 12.0.0 via the Splunk CLI (in-app browser returned errors)
 - Saved receiver configs to configs/splunk/indexer/; report updated to v0.3
 - Next: Day 4 - install the Universal Forwarder in the VM, configure inputs, verify events in Splunk
+
+## 2026-11-06 (Day 4) - Universal Forwarder, end-to-end pipeline
+- Installed Splunk Universal Forwarder 10.6.1.1 in the VM (build matches receiver); outputs to 192.168.38.1:9997
+- inputs.conf collects Sysmon (renderXml), Security, and PowerShell Operational into index=sysmon
+- Challenge: Sysmon missing in Splunk; splunkd.log showed errorCode=5 (access denied) for NT SERVICE\SplunkForwarder; granted read-only access to the Sysmon channel via SDDL instead of running as LocalSystem
+- Verified all three sources in Splunk: 20,495 events, 42 event codes (baseline recorded in report)
+- VM time zone changed from Pacific to Eastern; snapshot "Logging ready" taken
+- Saved forwarder configs to configs/splunk/forwarder/; report updated to v0.4 (Phase 1 complete)
+- Next: Phase 2 - install Atomic Red Team, run techniques, write detections

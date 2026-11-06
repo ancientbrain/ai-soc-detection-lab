@@ -1,10 +1,10 @@
 # AI-Assisted SOC Detection Lab: Design, Implementation, and Evaluation of an Endpoint Detection Pipeline with LLM-Assisted Alert Triage
 
-**Author:** Satwika [Last Name]
+**Author:** Satwika Maddukuri
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Living report, version 0.3
-**Last updated:** November 5, 2026 (end of Phase 1, Day 3)
+**Document status:** Living report, version 0.4
+**Last updated:** November 6, 2026 (end of Phase 1, Day 4)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
 
@@ -14,7 +14,7 @@
 
 *[Provisional; to be finalized at project completion.]*
 
-Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the instrumented victim environment and the SIEM receiver are deployed and verified; log forwarding, detection, evaluation, and results are pending.
+Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the full telemetry pipeline (endpoint instrumentation, forwarding, and SIEM ingestion) is deployed and verified end to end; detection, evaluation, and results are pending.
 
 ---
 
@@ -42,7 +42,7 @@ The project follows a 22-day plan at roughly two hours per day.
 
 | Phase | Focus | Planned dates | Status |
 |---|---|---|---|
-| 1 | Build the lab | Nov 3 – Nov 7, 2026 | In progress (Days 1–3 complete) |
+| 1 | Build the lab | Nov 3 – Nov 7, 2026 | Complete (Nov 6; Day 5 available as buffer) |
 | 2 | Attack, detect, investigate | Nov 8 – Nov 12 | Not started |
 | 3 | AI-assisted triage | Nov 13 – Nov 17 | Not started |
 | 4 | Detection-as-Code and polish | Nov 18 – Nov 21 | Not started |
@@ -82,14 +82,14 @@ LLMs can summarize alerts, suggest likely techniques, and recommend next steps, 
 
 ```mermaid
 flowchart LR
-    subgraph Host["Host PC (Windows, 16 GB RAM)"]
+    subgraph Host["Host PC (Windows 11, 16 GB RAM)"]
         SPL["Splunk Enterprise 10.6.1.1<br/>receiver on 192.168.38.1:9997<br/>index: sysmon"]
         PY["Python triage assistant<br/>(Phase 3)"]
     end
     subgraph VM["SOC-Win11 victim VM"]
         SYS["Sysmon 15.22<br/>sysmon-modular config"]
         WIN["Windows auditing<br/>4104 / 4688 / 4720"]
-        UF["Splunk Universal Forwarder<br/>(Phase 1, Day 4)"]
+        UF["Splunk Universal Forwarder 10.6.1.1<br/>least-privilege virtual service account"]
         ART["Atomic Red Team<br/>(Phase 2)"]
     end
     ART -- generates activity --> SYS
@@ -106,6 +106,7 @@ flowchart LR
 
 | Component | Version / detail | Location | Role |
 |---|---|---|---|
+| Host operating system | Windows 11, 16 GB RAM | Host | Runs the hypervisor, Splunk, and analysis tooling |
 | VMware Workstation Pro | 26.0.1 | Host | Hypervisor |
 | Windows 11 Enterprise Evaluation | Build 26300.9457 (90-day evaluation) | VM `SOC-Win11` | Victim endpoint |
 | Sysmon | 15.22 | VM | Primary endpoint telemetry |
@@ -113,7 +114,7 @@ flowchart LR
 | Splunk Enterprise | 10.6.1.1 (60-day Enterprise trial, convertible to Free license) | Host | SIEM: indexing, search, alerting |
 | Splunk Add-on for Sysmon | 5.0.1 (`Splunk_TA_microsoft_sysmon`) | Host | Field extraction for Sysmon events |
 | Splunk Add-on for Microsoft Windows | 12.0.0 (`Splunk_TA_windows`) | Host | Field extraction for Security and PowerShell events |
-| Splunk Universal Forwarder | *[Pending, Day 4]* | VM | Log shipping |
+| Splunk Universal Forwarder | 10.6.1.1 (build b2ae2962645c, matching the receiver) | VM | Log shipping |
 | Atomic Red Team | *[Pending, Phase 2]* | VM | Adversary emulation |
 | Gemini API | *[Pending, Phase 3]* | External | LLM for triage experiments |
 | sigma-cli / pySigma | *[Pending, Phase 4]* | Host | Sigma-to-SPL conversion |
@@ -245,9 +246,97 @@ Splunk Enterprise 10.6.1.1 was installed on the host from the official Windows M
 
 The receiver-side Splunk configuration (`indexes.conf`, `inputs.conf`) is stored in `configs/splunk/indexer/`.
 
-#### 4.1.5 Forwarder deployment and end-to-end validation (Days 4–5) *[Planned]*
+#### 4.1.5 Forwarder deployment and end-to-end validation (Day 4, November 6)
 
-Install the Splunk Universal Forwarder on the VM, configure inputs for the Sysmon Operational (`renderXml = true`), Security, and PowerShell Operational logs to `index = sysmon`, point output to 192.168.38.1:9997, verify ingestion with `index=sysmon | stats count by EventCode`, and take a "Logging ready" snapshot.
+**Installation.** The Splunk Universal Forwarder 10.6.1.1 was downloaded on the host (keeping the author's Splunk account off the victim machine) and copied into the VM. Its build identifier (`b2ae2962645c`) matches the receiver, avoiding version-mismatch issues. The installer was run with default options, which create a dedicated local forwarder administrator account and run the service as the low-privilege virtual account `NT SERVICE\SplunkForwarder`. The receiving indexer was set to `192.168.38.1:9997`, producing this `outputs.conf`:
+
+```ini
+[tcpout]
+defaultGroup = default-autolb-group
+
+[tcpout:default-autolb-group]
+server = 192.168.38.1:9997
+
+[tcpout-server://192.168.38.1:9997]
+```
+
+**Inputs.** Collection was defined in `etc\system\local\inputs.conf`. Sysmon events are sent in XML form (`renderXml = true`), the format the Sysmon add-on expects:
+
+```ini
+[WinEventLog://Microsoft-Windows-Sysmon/Operational]
+index = sysmon
+renderXml = true
+disabled = 0
+
+[WinEventLog://Security]
+index = sysmon
+disabled = 0
+
+[WinEventLog://Microsoft-Windows-PowerShell/Operational]
+index = sysmon
+disabled = 0
+```
+
+**Fault diagnosis: missing Sysmon telemetry.** After the forwarder restarted, `splunk list forward-server` reported an active connection, and Security and PowerShell events arrived in Splunk, but Sysmon events did not. A search across all indexes (`index=* source=*Sysmon*`) returned nothing, ruling out misrouting. The forwarder's internal log (`var\log\splunk\splunkd.log`) showed the cause:
+
+```
+ERROR ExecProcessor ... splunk-winevtlog - WinEventLogChannel::init: Init failed,
+unable to subscribe to Windows Event Log channel 'Microsoft-Windows-Sysmon/Operational': errorCode=5
+```
+
+Error code 5 is Windows `ERROR_ACCESS_DENIED`. The Sysmon channel's access control list, read with `wevtutil gl`, granted read access to SYSTEM, Administrators, Backup Operators, Server Operators, and Event Log Readers, but not to the forwarder's virtual account:
+
+```
+O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x1;;;BO)(A;;0x1;;;SO)(A;;0x1;;;S-1-5-32-573)
+```
+
+Two remediations were considered: running the forwarder as LocalSystem, or granting the existing account read-only access to this one channel. The second preserves least privilege and was chosen. The account's SID was resolved and a single read-only access control entry (`0x1`) was appended:
+
+```powershell
+wevtutil sl Microsoft-Windows-Sysmon/Operational "/ca:O:BAG:SYD:(A;;0xf0007;;;SY)(A;;0x7;;;BA)(A;;0x1;;;BO)(A;;0x1;;;SO)(A;;0x1;;;S-1-5-32-573)(A;;0x1;;;S-1-5-80-972488765-139171986-783781252-3188962990-3730692313)"
+```
+
+After the forwarder restarted, no new access errors appeared and Sysmon events began arriving in Splunk. Whether a Sysmon reinstall or configuration update resets this channel ACL has not been tested; it is the first item to check if Sysmon ingestion stops after such a change.
+
+**Clock alignment.** The forwarder log revealed that the VM's time zone was Pacific (UTC−08:00). It was changed to Eastern (`Set-TimeZone -Id "Eastern Standard Time"`) to match the analyst's local time and simplify attack timelines. Splunk stores event times internally in UTC, so data already ingested was unaffected.
+
+**Verification evidence**
+
+| Check | Expected | Observed |
+|---|---|---|
+| Forwarder service | Running | `SplunkForwarder` running as `NT SERVICE\SplunkForwarder` |
+| Forwarding connection | Active | `Active forwards: 192.168.38.1:9997`; no inactive forwards |
+| Sources in Splunk | Sysmon, Security, PowerShell | All three present after the ACL fix |
+| Event volume | Non-zero | 20,495 events across 42 distinct event codes (Nov 5, 4:00 PM to Nov 6, 4:44 PM) |
+
+A **"Logging ready"** snapshot was taken. It is the restore point for all adversary emulation in Phase 2.
+
+#### 4.1.6 Baseline telemetry profile
+
+The pre-attack event distribution, the 14 most frequent of 42 event codes, establishes a benign baseline against which emulated attacks will be compared:
+
+| Event code | Source | Meaning | Count |
+|---|---|---|---|
+| 4907 | Security | Auditing settings on an object were changed | 9,849 |
+| 11 | Sysmon | File created | 4,399 |
+| 2 | Sysmon | File creation time changed | 2,113 |
+| 13 | Sysmon | Registry value set | 1,413 |
+| 4688 | Security | Process created | 818 |
+| 7 | Sysmon | Image (DLL) loaded | 380 |
+| 3 | Sysmon | Network connection | 353 |
+| 12 | Sysmon | Registry object created or deleted | 289 |
+| 10 | Sysmon | Process accessed | 196 |
+| 4104 | PowerShell | Script block logged | 131 |
+| 4624 | Security | Successful logon | 105 |
+| 4672 | Security | Special privileges assigned to new logon | 99 |
+| 1 | Sysmon | Process created | 95 |
+| 5379 | Security | Credential Manager credentials read | 54 |
+
+Three observations from the baseline shape the detection work ahead:
+
+1. **4907 dominates the volume** (about 48% of events). It most likely reflects Windows servicing activity after updates. It has little detection value here and is a candidate for filtering if volume ever becomes a concern.
+2. **Sysmon Event 1 (95) is far lower than Security 4688 (818)** because the sysmon-modular configuration filters out known-benign process launches, while 4688 records every process. Sysmon Event 1 is therefore the higher-signal source for process-based detections.
+3. **Sysmon Event 10 already appears 196 times without any attack.** Benign processes access LSASS routinely, so the credential-dumping detection (T1003.001) must be tuned against this baseline to avoid false positives.
 
 ### 4.2 Phase 2: Adversary emulation and detection *[Planned]*
 
@@ -278,16 +367,16 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 
 | Source | Event ID | Captures | Relevant ATT&CK techniques | Status |
 |---|---|---|---|---|
-| Sysmon | 1 | Process creation, command line, hashes, parent | T1059.001, T1053.005, T1087.001 | Configured |
-| Sysmon | 3 | Network connections | Command and control, exfiltration | Verified |
-| Sysmon | 10 | Process access (including LSASS) | T1003.001 | Configured (rule confirmed in config) |
-| Sysmon | 13 | Registry value set | T1547.001 | Verified |
-| Sysmon | 22 | DNS queries | Command and control | Verified |
-| PowerShell | 4104 | Decoded script block content | T1059.001 | Verified |
-| Security | 4688 | Process creation with command line | Broad execution coverage | Verified |
+| Sysmon | 1 | Process creation, command line, hashes, parent | T1059.001, T1053.005, T1087.001 | Ingested |
+| Sysmon | 3 | Network connections | Command and control, exfiltration | Ingested |
+| Sysmon | 10 | Process access (including LSASS) | T1003.001 | Ingested (benign baseline present) |
+| Sysmon | 13 | Registry value set | T1547.001 | Ingested |
+| Sysmon | 22 | DNS queries | Command and control | Verified locally |
+| PowerShell | 4104 | Decoded script block content | T1059.001 | Ingested |
+| Security | 4688 | Process creation with command line | Broad execution coverage | Ingested |
 | Security | 4720 | User account created | T1136.001 | Auditing enabled |
 
-"Verified" means events were observed in the local event log. "Configured" means the logging rule is in place but the event will first be observed during adversary emulation.
+"Ingested" means events were observed in Splunk (`index=sysmon`). "Verified locally" means events were seen in the VM's event log but did not appear among the most frequent codes in Splunk. "Auditing enabled" means the event will first be produced during adversary emulation.
 
 ---
 
@@ -304,6 +393,8 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | 7 | Browser warning on add-on packages | `.tgz` downloads flagged as potentially harmful | Generic browser heuristic for uncommon archive types | Confirmed the official source and publisher before keeping the files | Base trust decisions on provenance, not on the warning alone. |
 | 8 | CLI command appeared to hang | `splunk display app \| Select-String` printed nothing for minutes | The CLI's login prompt was hidden by the output filter | Authenticated first with `splunk login`, then reran the command | Authenticate before piping interactive CLI output. |
 | 9 | Verification run on the wrong machine | Connectivity tests showed the host's own addresses | Commands entered in the host terminal instead of the VM | Reran in the VM after checking the prompt (`satu7` = host, `SOC-WIN11` = VM) | Always confirm which machine a terminal belongs to; critical once attack simulations begin. |
+| 10 | Write to forwarder configuration denied | `Out-File: Access to the path ... inputs.conf is denied` | Terminal not elevated | Reopened Terminal as Administrator and confirmed the role before writing | Changes under `Program Files` require elevation; verify the role rather than assuming it. |
+| 11 | Sysmon events missing from Splunk | Security and PowerShell arrived; Sysmon absent from all indexes | Forwarder virtual account lacked read access to the Sysmon channel (`errorCode=5`) | Appended a read-only ACE for the account's SID to the channel SDDL (Section 4.1.5) | Least-privilege agents need explicit access to each protected log source; check the agent's own logs first. |
 
 ---
 
@@ -311,7 +402,8 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 
 1. **Isolation.** Adversary emulation runs only inside the VM. The NAT adapter will be disconnected before testing, leaving only the host-only link.
 2. **Least-privilege network access.** The host firewall admits TCP 9997 only from the host-only subnet 192.168.38.0/24.
-3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install" and "Sysmon + logging."
+   **Least-privilege agent.** The forwarder runs as a virtual service account with read-only access to exactly the channels it collects, rather than as LocalSystem.
+3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install," "Sysmon + logging," and "Logging ready."
 4. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
 5. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, Splunk and Splunkbase, the original project repositories), and published hashes are verified where available.
 6. **Data handling.** Only synthetic lab telemetry is ever sent to the LLM; no real organizational or personal data enters the lab.
@@ -329,7 +421,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 
 ## 9. Limitations and Future Work
 
-*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025; if the host runs Windows 11, it may fall outside the officially listed platforms. *[Confirm host OS with `winver`.]* Future work may include an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
+*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. The host runs Windows 11, while Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025, so the host OS may fall outside the officially listed platforms; this has no practical effect in the lab. Future work may include an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
 
 ---
 
@@ -358,6 +450,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | Nov 4, 2026 | Day 1: Victim VM | VM built, networking repaired, updated, "Clean install" snapshot |
 | Nov 4, 2026 | Day 2: Instrumentation | Sysmon and Windows auditing deployed and verified; "Sysmon + logging" snapshot |
 | Nov 5, 2026 | Day 3: SIEM | Splunk Enterprise 10.6.1.1 installed; `sysmon` index; receiving on 9997 with a host-only firewall rule; Sysmon and Windows add-ons installed via CLI |
+| Nov 6, 2026 | Day 4: Forwarding | Universal Forwarder deployed; Sysmon channel access fixed; all three sources ingested; time zone corrected; "Logging ready" snapshot |
 
 ## Appendix B: Artifact Index
 
@@ -365,8 +458,8 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 |---|---|---|
 | Sysmon configuration (verified) | `configs/sysmon/sysmonconfig.xml` | Committed and pushed |
 | Splunk receiver configuration | `configs/splunk/indexer/` | Added Day 3 |
-| Progress log | `docs/progress-log.md` | Current through Day 3 |
-| Universal Forwarder configuration | `configs/splunk/forwarder/` | Pending (Day 4) |
+| Progress log | `docs/progress-log.md` | Current through Day 4 |
+| Universal Forwarder configuration | `configs/splunk/forwarder/` | Added Day 4 |
 | Detection searches | `detections/spl/` | Pending |
 | Sigma rules | `rules/` | Pending |
 | Triage assistant | `triage/` | Pending |
