@@ -42,3 +42,10 @@
 - VM time zone changed from Pacific to Eastern; snapshot "Logging ready" taken
 - Saved forwarder configs to configs/splunk/forwarder/; report updated to v0.4 (Phase 1 complete)
 - Next: Phase 2 - install Atomic Red Team, run techniques, write detections
+
+## 2026-11-06 (Phase 2 start) - Atomic Red Team installed
+- Defender exclusion added for C:\AtomicRedTeam only (VM); real-time protection otherwise left on
+- Confirmed invoke-atomicredteam default branch via GitHub API; downloaded the installer, reviewed it, then ran Install-AtomicRedTeam -getAtomics
+- Verified with Invoke-AtomicTest T1059.001 -ShowDetailsBrief (21 tests listed)
+- Snapshot "ART installed" taken
+- Next: choose one test per technique, check prerequisites, disconnect NAT, run first test and detect it in Splunk
