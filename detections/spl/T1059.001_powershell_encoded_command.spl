@@ -1,0 +1,17 @@
+```
+Title:       T1059.001 - PowerShell Encoded Command
+MITRE:       T1059.001 Command and Scripting Interpreter: PowerShell
+Data source: Sysmon Event ID 1 (process creation), index=sysmon
+Logic:       powershell.exe or pwsh.exe launched with any abbreviation of
+             -EncodedCommand (-e, -ec, -en, -enc, ... -EncodedCommand),
+             introduced by - or /, followed by a Base64-like payload of 20+ chars.
+Why:         The common search CommandLine="*-enc*" misses the -e form
+             (validated against Atomic test T1059.001-17: 0 of 1 vs 1 of 1).
+Validation:  1 true positive, 0 false positives over all lab data (Nov 6, 2026).
+Alert:       Scheduled hourly; trigger when results > 0, for each result;
+             Add to Triggered Alerts, severity High.
+Note:        Uses where match(); an equivalent | regex version returned no results.
+```
+index=sysmon EventCode=1 (Image="*\\powershell.exe" OR Image="*\\pwsh.exe")
+| where match(CommandLine, "(?i)\s[-/](e|ec|en[a-z]*)\s+[A-Za-z0-9+/=]{20,}")
+| table _time, host, User, ParentImage, Image, CommandLine
