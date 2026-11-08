@@ -59,3 +59,13 @@
 - Saved alert "T1059.001 - PowerShell Encoded Command" (fixed: it had saved the wrong search)
 - Report updated to v0.5; detection saved to detections/spl/
 - Next: T1003.001 LSASS dump via comsvcs.dll
+
+## 2026-11-07 (Phase 2, session 2) - T1003.001 LSASS dumping
+- Ran T1003.001-2 (comsvcs.dll MiniDump); Defender blocked it (Trojan:Win32/RundllLolBin.AF, Severe)
+- Sysmon missed attempt 1; Security 4688 caught it; detection: comsvcs + MiniDump in cmd line (1 TP, 0 FP)
+- Alert saved: "T1003.001 - LSASS Dump via comsvcs.dll" (Critical, hourly)
+- Option A: added Defender/Operational to forwarder inputs; alert "Defender - Threat Detected" (1116) saved
+- Option B: turned off real-time protection (Defender logged Event 5001); rundll32 ran but LSA protection (RunAsPPL=2) stopped the dump; detection caught attempt 2 as well
+- Disk ran full (2.65 GB); deleted ISO and old snapshots; now ~35 GB free; Splunk recovered
+- Detection files added: T1003.001_lsass_dump_comsvcs.spl, Defender_threat_detected.spl
+- Next: Event 5001 detection (T1562.001), then T1053.005, T1547.001, T1136.001, T1087.001

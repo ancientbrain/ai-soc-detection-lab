@@ -1,0 +1,2 @@
+﻿index=sysmon source="*Defender/Operational" EventCode=1116
+| table _time, host, EventCode, Message
