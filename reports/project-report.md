@@ -3,8 +3,8 @@
 **Author:** Satwika Maddukuri
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Living report, version 0.4
-**Last updated:** November 6, 2026 (end of Phase 1, Day 4)
+**Document status:** Living report, version 0.5
+**Last updated:** November 7, 2026 (Phase 2 in progress: technique 1 of 6 complete)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
 
@@ -14,7 +14,7 @@
 
 *[Provisional; to be finalized at project completion.]*
 
-Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the full telemetry pipeline (endpoint instrumentation, forwarding, and SIEM ingestion) is deployed and verified end to end; detection, evaluation, and results are pending.
+Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the full telemetry pipeline is deployed and verified end to end, and adversary emulation has begun: the first technique (T1059.001, encoded PowerShell) has been executed, investigated across three log sources, and covered by a validated detection that closes a gap in a commonly cited search. LLM evaluation and Detection-as-Code are pending.
 
 ---
 
@@ -43,7 +43,7 @@ The project follows a 22-day plan at roughly two hours per day.
 | Phase | Focus | Planned dates | Status |
 |---|---|---|---|
 | 1 | Build the lab | Nov 3 – Nov 7, 2026 | Complete (Nov 6; Day 5 available as buffer) |
-| 2 | Attack, detect, investigate | Nov 8 – Nov 12 | Not started |
+| 2 | Attack, detect, investigate | Nov 8 – Nov 12 | In progress (started early, Nov 6; 1 of 6 techniques complete) |
 | 3 | AI-assisted triage | Nov 13 – Nov 17 | Not started |
 | 4 | Detection-as-Code and polish | Nov 18 – Nov 21 | Not started |
 | Buffer | Contingency | Nov 22 – Nov 24 | Unused |
@@ -115,7 +115,7 @@ flowchart LR
 | Splunk Add-on for Sysmon | 5.0.1 (`Splunk_TA_microsoft_sysmon`) | Host | Field extraction for Sysmon events |
 | Splunk Add-on for Microsoft Windows | 12.0.0 (`Splunk_TA_windows`) | Host | Field extraction for Security and PowerShell events |
 | Splunk Universal Forwarder | 10.6.1.1 (build b2ae2962645c, matching the receiver) | VM | Log shipping |
-| Atomic Red Team | *[Pending, Phase 2]* | VM | Adversary emulation |
+| Invoke-AtomicRedTeam + atomics | Installed from the official installer (`master` branch) to `C:\AtomicRedTeam` | VM | Adversary emulation |
 | Gemini API | *[Pending, Phase 3]* | External | LLM for triage experiments |
 | sigma-cli / pySigma | *[Pending, Phase 4]* | Host | Sigma-to-SPL conversion |
 
@@ -298,7 +298,7 @@ wevtutil sl Microsoft-Windows-Sysmon/Operational "/ca:O:BAG:SYD:(A;;0xf0007;;;SY
 
 After the forwarder restarted, no new access errors appeared and Sysmon events began arriving in Splunk. Whether a Sysmon reinstall or configuration update resets this channel ACL has not been tested; it is the first item to check if Sysmon ingestion stops after such a change.
 
-**Clock alignment.** The forwarder log revealed that the VM's time zone was Pacific (UTC−08:00). It was changed to Eastern (`Set-TimeZone -Id "Eastern Standard Time"`) to match the analyst's local time and simplify attack timelines. Splunk stores event times internally in UTC, so data already ingested was unaffected.
+**Time zone change.** The forwarder log revealed that the VM's time zone was Pacific (UTC−08:00). It was changed to Eastern (`Set-TimeZone -Id "Eastern Standard Time"`) to match the analyst's local time. This change later proved to have left the VM's underlying UTC clock three hours fast; the discovery and correction are described in Section 4.2.3.
 
 **Verification evidence**
 
@@ -338,18 +338,82 @@ Three observations from the baseline shape the detection work ahead:
 2. **Sysmon Event 1 (95) is far lower than Security 4688 (818)** because the sysmon-modular configuration filters out known-benign process launches, while 4688 records every process. Sysmon Event 1 is therefore the higher-signal source for process-based detections.
 3. **Sysmon Event 10 already appears 196 times without any attack.** Benign processes access LSASS routinely, so the credential-dumping detection (T1003.001) must be tuned against this baseline to avoid false positives.
 
-### 4.2 Phase 2: Adversary emulation and detection *[Planned]*
+### 4.2 Phase 2: Adversary emulation and detection
 
-| ATT&CK ID | Technique | Primary data source | Detection status |
-|---|---|---|---|
-| T1059.001 | PowerShell (encoded commands) | Sysmon 1, PowerShell 4104 | Not started |
-| T1003.001 | LSASS memory credential dumping | Sysmon 10 | Not started |
-| T1053.005 | Scheduled task | Sysmon 1 | Not started |
-| T1547.001 | Registry Run keys | Sysmon 13 | Not started |
-| T1136.001 | Create local account | Security 4720 | Not started |
-| T1087.001 | Local account discovery | Sysmon 1 | Not started |
+#### 4.2.1 Emulation setup (November 6)
 
-For each technique this section will record the Atomic test executed and its timestamp, the detection logic, whether the detection fired, and false-positive observations from baseline activity. A dashboard and an incident report for the chain PowerShell → credential dumping → persistence will follow.
+**Tooling.** Invoke-AtomicRedTeam and the Atomic test library were installed in the VM. Before installation, the repository's default branch was confirmed through the GitHub API, and the installer was downloaded to a file and reviewed rather than piped directly into `Invoke-Expression`. A Microsoft Defender exclusion was added for `C:\AtomicRedTeam` only; real-time protection otherwise remained enabled.
+
+**Defender intervention.** One candidate test (T1059.001-15) required the AtomicTestHarnesses PowerShell module. Installing it from the PowerShell Gallery placed it outside the excluded folder, and Defender blocked several of its scripts as malicious (including an LSASS-dumping harness), leaving the module partially loaded. Rather than widen the Defender exclusion, the VM was restored to the "ART installed" snapshot and an alternative test without that dependency was selected. This is itself a meaningful result: default endpoint protection detected and blocked attack tooling on arrival.
+
+**Test plan.** One test was chosen per technique, preferring built-in Windows binaries (so tests run offline after isolation), alignment with the planned detection, and the availability of cleanup commands:
+
+| ATT&CK ID | Technique | Atomic test | Prerequisites | Status |
+|---|---|---|---|---|
+| T1059.001 | PowerShell | -17 PowerShell Command Execution (`powershell.exe -e <Base64>`) | Met | **Executed; detected; alert saved** |
+| T1003.001 | LSASS memory | -2 Dump LSASS.exe memory using comsvcs.dll | Met | Pending |
+| T1053.005 | Scheduled task | -2 Scheduled task Local (`schtasks /create`) | Met | Pending |
+| T1547.001 | Registry Run keys | -1 Reg Key Run | Met | Pending |
+| T1136.001 | Local account | -4 Create a new user in a command prompt | Met | Pending |
+| T1087.001 | Local account discovery | -8 Enumerate all accounts on Windows (Local) | Met | Pending |
+
+**Isolation procedure.** Before testing, the VM's NAT adapter was disconnected at the hypervisor level (both *Connected* and *Connect at power on* cleared), leaving only the host-only link. Isolation is verified before tests rather than assumed: `Test-NetConnection 8.8.8.8 -Port 53` must fail and `Test-NetConnection 192.168.38.1 -Port 9997` must succeed. The first verification attempt showed the NAT adapter still connected, which the check caught before any attack ran. The verified state was saved as the snapshot "Pre-attack v2 (isolated, clock synced)."
+
+#### 4.2.2 Technique 1: T1059.001, encoded PowerShell
+
+**Execution.** Atomic test T1059.001-17 runs a command used in real intrusions, reported in Red Canary's 2021 Threat Detection Report:
+
+```
+powershell.exe -e JgAgACgAZwBjAG0AIAAoACcAaQBlAHsAMAB9ACcAIAAtAGYAIAAnAHgAJwApACkAIAAoACIAVwByACIAKwAiAGkAdAAiACsAIgBlAC0ASAAiACsAIgBvAHMAdAAgACcASAAiACsAIgBlAGwAIgArACIAbABvACwAIABmAHIAIgArACIAbwBtACAAUAAiACsAIgBvAHcAIgArACIAZQByAFMAIgArACIAaAAiACsAIgBlAGwAbAAhACcAIgApAA==
+```
+
+The Base64 payload is itself obfuscated: `'ie{0}' -f 'x'` assembles the string `iex` (Invoke-Expression) at runtime, and the displayed message is split into concatenated fragments to evade keyword matching. The test was started at 20:31:41 VM time and printed "Hello, from PowerShell!" All VM timestamps in this subsection are three hours fast because of the clock skew described in Section 4.2.3; the relative order and spacing of events are unaffected.
+
+**Investigation.** The activity was located in Sysmon and PowerShell logs, and the Security log was searched:
+
+| Time (VM clock) | Source | Evidence |
+|---|---|---|
+| 20:31:50.592 | Sysmon 1 | `cmd.exe` started with `"cmd.exe" /c powershell.exe -e JgAg...` |
+| 20:31:50.721 | Sysmon 1 | `powershell.exe` started by `cmd.exe` with `powershell.exe -e JgAg...` |
+| 20:31:51.259 | PowerShell 4104 | Decoded script block: `& (gcm ('ie{0}' -f 'x')) ("Wr"+"it"+"e-H"+"ost 'H"+"el"+"lo, fr"+"om P"+"ow"+"erS"+"h"+"ell!'")`, ScriptBlock ID `3f9c6326-cfc3-46e3-8cf3-d40d7479f972`, empty `Path` |
+| 20:31–20:33 | Security 4688 | Window searched; results were dominated by forwarder activity, and the attack's own 4688 record was not isolated in this session |
+
+Three analytic points emerged. First, the **parent process** separates the attack from benign use: the analyst's own PowerShell session in the same window had `WindowsTerminal.exe` as its parent, while the attack's parent was `cmd.exe`. Second, Script Block Logging recovered the **decoded payload**, and its empty `Path` field shows the code ran from the command line rather than from a script on disk. Third, the forwarder's own helper process (`splunk-powershell.exe`, run by `NT SERVICE\SplunkForwarder`) appears in 4688 results for "powershell.exe," a source of noise that naive keyword searches must account for.
+
+**Detection gap.** The detection proposed in the original project plan was:
+
+```
+index=sysmon EventCode=1 Image="*\\powershell.exe" CommandLine="*-enc*"
+```
+
+After confirming that the `CommandLine` field was populated for the attack event, this search returned **zero results**. PowerShell accepts any unambiguous prefix of `-EncodedCommand` (for example `-e`, `-en`, `-enc`, and the alias `-ec`), so a search for the literal substring `-enc` misses the `-e` form used here.
+
+**Improved detection.**
+
+```
+index=sysmon EventCode=1 (Image="*\\powershell.exe" OR Image="*\\pwsh.exe")
+| where match(CommandLine, "(?i)\s[-/](e|ec|en[a-z]*)\s+[A-Za-z0-9+/=]{20,}")
+| table _time, host, User, ParentImage, Image, CommandLine
+```
+
+The regular expression matches a parameter introduced by `-` or `/` that is `e`, `ec`, or any word beginning with `en`, followed by a Base64-like string of at least 20 characters; the length requirement suppresses matches on short, benign arguments. Filtering on the PowerShell image produces one result per execution, with the `cmd.exe` launcher visible in `ParentImage`. An initial version written with SPL's `| regex` command returned no results even though the same pattern matched under `where match()`; the root cause was not determined, and `where match()` was adopted.
+
+**Validation.** Run over all indexed data (more than 51,000 events at the time), the improved detection returned **exactly one result**, the attack, giving a true positive with no false positives against the baseline.
+
+**Alerting.** The search was saved as the scheduled alert *T1059.001 - PowerShell Encoded Command* (hourly; trigger when results exceed zero, for each result; action: add to Triggered Alerts, severity High). Review of the saved object showed that the alert had initially captured an unrelated `stats` search open in the same session; the search was corrected and re-verified. Scheduled alerting is available during the Splunk Enterprise trial but not under the Free license.
+
+#### 4.2.3 Clock skew discovery and correction
+
+When the validated detection was run over "Last 24 hours," it returned nothing, although it matched over "All time." The search window ended at 5:48 PM, while the attack events were stamped 8:31 PM: the events were about three hours in the future relative to Splunk. Comparing clocks confirmed the cause:
+
+| Machine | Local time | UTC |
+|---|---|---|
+| Host | 5:53 PM | 22:53 (Nov 6) |
+| VM | 8:55 PM | 01:55 (Nov 7) |
+
+Both machines displayed Eastern time, but the VM's UTC clock was three hours fast, exactly the Pacific-to-Eastern offset introduced by the Day 4 time zone change. The most likely mechanism is that the hypervisor presents a Windows guest's hardware clock in host local time, so changing the guest's time zone shifted its computed UTC; this explanation was not verified further. The fix was to enable VMware Tools time synchronization with the host and confirm that the VM's UTC matched the host's (23:43 on both after correction). The pre-attack snapshot was retaken afterward, because snapshots also capture VM settings and the earlier one would have reintroduced the problem.
+
+**Data quality impact.** Events generated by the VM between the Day 4 time zone change and this correction carry timestamps about three hours fast. Their internal ordering is intact, but they overlap in Splunk's timeline with correctly stamped events produced after the fix. This is recorded as a known limitation of the dataset. The episode illustrates why time synchronization is a prerequisite for correlation and scheduled detection in any SOC.
 
 ### 4.3 Phase 3: LLM-assisted triage *[Planned]*
 
@@ -395,33 +459,46 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | 9 | Verification run on the wrong machine | Connectivity tests showed the host's own addresses | Commands entered in the host terminal instead of the VM | Reran in the VM after checking the prompt (`satu7` = host, `SOC-WIN11` = VM) | Always confirm which machine a terminal belongs to; critical once attack simulations begin. |
 | 10 | Write to forwarder configuration denied | `Out-File: Access to the path ... inputs.conf is denied` | Terminal not elevated | Reopened Terminal as Administrator and confirmed the role before writing | Changes under `Program Files` require elevation; verify the role rather than assuming it. |
 | 11 | Sysmon events missing from Splunk | Security and PowerShell arrived; Sysmon absent from all indexes | Forwarder virtual account lacked read access to the Sysmon channel (`errorCode=5`) | Appended a read-only ACE for the account's SID to the channel SDDL (Section 4.1.5) | Least-privilege agents need explicit access to each protected log source; check the agent's own logs first. |
+| 12 | Attack-tooling dependency blocked | `Install-Module AtomicTestHarnesses`: "file contains a virus or potentially unwanted software" | Defender flagged the module, installed outside the excluded folder | Restored the "ART installed" snapshot and chose a test without the dependency | Prefer snapshot rollback and alternative tests over widening security exclusions. |
+| 13 | Isolation not actually in effect | `Test-NetConnection 8.8.8.8` succeeded via the NAT adapter | Adapter setting not yet applied | Disconnected the NAT adapter in VM settings and re-verified | Verify isolation; do not assume it. |
+| 14 | Improved detection returned nothing | `\| regex` version of the search had no results | Not determined; the same pattern worked with `where match()` | Rewrote using `where match()` and confirmed field contents first | Test detections against a known-true event; zero results may mean a broken search. |
+| 15 | Real-time time range selected | "0 of 0 events matched" while running | "All time (real-time)" only shows newly arriving events | Selected the historical "All time" preset | Distinguish real-time from historical searches. |
+| 16 | Detection missed in "Last 24 hours" | Matched over All time but not over recent windows | VM UTC clock three hours fast after the time zone change | Enabled VMware Tools time sync, verified UTC, retook the pre-attack snapshot | Clock skew silently breaks time-windowed searches and alerts. |
+| 17 | Alert saved the wrong search | Saved alert contained `index=sysmon \| stats count by source` | Alert created while a different search was open | Edited the saved search and re-verified it in Settings | Review what a saved alert actually runs, not just its name. |
 
 ---
 
 ## 7. Security, Safety, and Ethical Controls
 
-1. **Isolation.** Adversary emulation runs only inside the VM. The NAT adapter will be disconnected before testing, leaving only the host-only link.
+1. **Isolation.** Adversary emulation runs only inside the VM. The NAT adapter is disconnected at the hypervisor before testing, and isolation is verified (internet unreachable, Splunk reachable) before each test session.
 2. **Least-privilege network access.** The host firewall admits TCP 9997 only from the host-only subnet 192.168.38.0/24.
    **Least-privilege agent.** The forwarder runs as a virtual service account with read-only access to exactly the channels it collects, rather than as LocalSystem.
-3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install," "Sysmon + logging," and "Logging ready."
-4. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
-5. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, Splunk and Splunkbase, the original project repositories), and published hashes are verified where available.
-6. **Data handling.** Only synthetic lab telemetry is ever sent to the LLM; no real organizational or personal data enters the lab.
-7. **Secrets hygiene.** API keys will be stored in environment variables and excluded by `.gitignore`; the repository stays private until the core project is complete.
-8. **Licensing.** Windows 11 Enterprise is used under Microsoft's evaluation terms for non-production testing.
-9. **Human oversight.** The triage assistant is advisory; every recommendation requires analyst approval.
+3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install," "Sysmon + logging," "Logging ready," "ART installed," and "Pre-attack v2 (isolated, clock synced)."
+4. **Scoped security exclusions.** The only Defender exclusion is the Atomic Red Team folder in the VM; when tooling outside it was blocked, the exclusion was not widened.
+5. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
+6. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, Splunk and Splunkbase, the original project repositories), published hashes are verified where available, and installer scripts are reviewed before execution.
+7. **Data handling.** Only synthetic lab telemetry is ever sent to the LLM; no real organizational or personal data enters the lab.
+8. **Secrets hygiene.** API keys will be stored in environment variables and excluded by `.gitignore`; the repository stays private until the core project is complete.
+9. **Licensing.** Windows 11 Enterprise is used under Microsoft's evaluation terms for non-production testing.
+10. **Human oversight.** The triage assistant is advisory; every recommendation requires analyst approval.
 
 ---
 
 ## 8. Results
 
-*[Pending; to be completed in Phases 2–4.]* Planned contents: detection outcomes per technique, baseline false-positive observations, LLM triage accuracy by rubric category, representative failure cases, and Sigma conversion fidelity.
+*[Partial; Phases 2–4 in progress.]*
+
+| Technique | Executed | Observed in | Detection | True positives | False positives (all data) |
+|---|---|---|---|---|---|
+| T1059.001 | Yes | Sysmon 1, PowerShell 4104 | Improved encoded-command search (Section 4.2.2) | 1 of 1 | 0 |
+
+The detection proposed in the original plan for T1059.001 produced 0 of 1 true positives against the same data. Remaining contents (other techniques, LLM triage accuracy, Sigma conversion fidelity) will be added as the work is completed.
 
 ---
 
 ## 9. Limitations and Future Work
 
-*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. The host runs Windows 11, while Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025, so the host OS may fall outside the officially listed platforms; this has no practical effect in the lab. Future work may include an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
+*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. The host runs Windows 11, while Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025, so the host OS may fall outside the officially listed platforms; this has no practical effect in the lab. Splunk scheduled alerting is unavailable under the Free license, so alerts depend on the 60-day Enterprise trial. VM telemetry between the Day 4 time zone change and the November 6 clock correction is time-shifted by about three hours (Section 4.2.3). Future work may include forwarding the *Microsoft-Windows-Windows Defender/Operational* log so that endpoint-protection responses are captured alongside attacker activity, an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
 
 ---
 
@@ -451,6 +528,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | Nov 4, 2026 | Day 2: Instrumentation | Sysmon and Windows auditing deployed and verified; "Sysmon + logging" snapshot |
 | Nov 5, 2026 | Day 3: SIEM | Splunk Enterprise 10.6.1.1 installed; `sysmon` index; receiving on 9997 with a host-only firewall rule; Sysmon and Windows add-ons installed via CLI |
 | Nov 6, 2026 | Day 4: Forwarding | Universal Forwarder deployed; Sysmon channel access fixed; all three sources ingested; time zone corrected; "Logging ready" snapshot |
+| Nov 6, 2026 | Phase 2 start | Atomic Red Team installed; Defender blocked a test dependency; isolation verified; T1059.001 executed, investigated, and detected with an improved search; clock skew found and corrected; alert saved |
 
 ## Appendix B: Artifact Index
 
@@ -458,9 +536,9 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 |---|---|---|
 | Sysmon configuration (verified) | `configs/sysmon/sysmonconfig.xml` | Committed and pushed |
 | Splunk receiver configuration | `configs/splunk/indexer/` | Added Day 3 |
-| Progress log | `docs/progress-log.md` | Current through Day 4 |
+| Progress log | `docs/progress-log.md` | Current through Phase 2 start |
 | Universal Forwarder configuration | `configs/splunk/forwarder/` | Added Day 4 |
-| Detection searches | `detections/spl/` | Pending |
+| Detection searches | `detections/spl/` | T1059.001 added Nov 7 |
 | Sigma rules | `rules/` | Pending |
 | Triage assistant | `triage/` | Pending |
 | Incident report and AI evaluation | `reports/` | Pending |

@@ -49,3 +49,13 @@
 - Verified with Invoke-AtomicTest T1059.001 -ShowDetailsBrief (21 tests listed)
 - Snapshot "ART installed" taken
 - Next: choose one test per technique, check prerequisites, disconnect NAT, run first test and detect it in Splunk
+
+## 2026-11-06 (Phase 2, session 1) - First technique: T1059.001
+- Defender blocked the AtomicTestHarnesses module (needed by test -15); restored "ART installed" instead of widening exclusions; chose test -17
+- Isolated the VM (NAT disconnected, verified: internet False, Splunk True)
+- Ran T1059.001-17 (powershell.exe -e <Base64>); found it in Sysmon 1 (cmd.exe -> powershell.exe) and 4104 (decoded payload, empty Path)
+- Plan's detection CommandLine="*-enc*" returned 0 results (misses -e); improved where match() detection: 1 TP, 0 FP over all data
+- Found VM clock 3h fast after the time zone change; enabled VMware Tools time sync; retook snapshot "Pre-attack v2 (isolated, clock synced)"
+- Saved alert "T1059.001 - PowerShell Encoded Command" (fixed: it had saved the wrong search)
+- Report updated to v0.5; detection saved to detections/spl/
+- Next: T1003.001 LSASS dump via comsvcs.dll
