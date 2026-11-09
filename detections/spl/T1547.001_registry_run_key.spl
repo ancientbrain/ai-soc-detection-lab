@@ -1,0 +1,4 @@
+﻿index=sysmon EventCode=13 TargetObject="*\\CurrentVersion\\Run*"
+| where NOT match(Image, "(?i)MsiExec|OneDrive|Teams|Update|Installer|Edge|msedge|rundll32")
+| where NOT match(User, "(?i)NT AUTHORITY|SYSTEM")
+| table _time, host, User, Image, TargetObject, Details

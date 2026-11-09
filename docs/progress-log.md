@@ -69,3 +69,11 @@
 - Disk ran full (2.65 GB); deleted ISO and old snapshots; now ~35 GB free; Splunk recovered
 - Detection files added: T1003.001_lsass_dump_comsvcs.spl, Defender_threat_detected.spl
 - Next: Event 5001 detection (T1562.001), then T1053.005, T1547.001, T1136.001, T1087.001
+
+## 2026-11-09 (Phase 2, session 3) - Techniques 3-6 complete
+- T1053.005: schtasks /create; detection saved (1 TP, 0 FP)
+- T1547.001: reg.exe writing to CurrentVersion\Run; tuned filter for Edge and SYSTEM; detection saved (1 TP, 0 FP)
+- T1136.001: net user /add; Security Event 4720; detection saved (1 TP, 0 FP)
+- T1087.001: net user/localgroup enumeration; 10 events, excluded SYSTEM account; detection saved (0 FP)
+- Phase 2 complete: all 6 techniques executed, investigated, and detected; 7 alerts saved in Splunk
+- Next: Phase 3 - Python + Gemini triage assistant

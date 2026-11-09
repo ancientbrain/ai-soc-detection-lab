@@ -1,0 +1,3 @@
+﻿index=sysmon EventCode=4720
+| where NOT match(Message, "(?i)NT AUTHORITY|SYSTEM|DefaultAccount|WDAGUtility")
+| table _time, host, Message
