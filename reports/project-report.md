@@ -3,8 +3,8 @@
 **Author:** Satwika Maddukuri
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Living report, version 0.5
-**Last updated:** November 7, 2026 (Phase 2 in progress: technique 1 of 6 complete)
+**Document status:** Living report, version 0.6
+**Last updated:** November 9, 2026 (Phase 2 in progress: techniques 1–2 of 6 complete)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
 
@@ -14,7 +14,7 @@
 
 *[Provisional; to be finalized at project completion.]*
 
-Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the full telemetry pipeline is deployed and verified end to end, and adversary emulation has begun: the first technique (T1059.001, encoded PowerShell) has been executed, investigated across three log sources, and covered by a validated detection that closes a gap in a commonly cited search. LLM evaluation and Detection-as-Code are pending.
+Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, the full telemetry pipeline is deployed and verified end to end, and adversary emulation has begun: two of six techniques are complete. T1059.001 (encoded PowerShell) and T1003.001 (LSASS credential dumping via comsvcs.dll) have been executed, investigated, and covered by validated detections. Microsoft Defender's operational log has been added to the forwarding pipeline. LLM evaluation and Detection-as-Code are pending.
 
 ---
 
@@ -43,7 +43,7 @@ The project follows a 22-day plan at roughly two hours per day.
 | Phase | Focus | Planned dates | Status |
 |---|---|---|---|
 | 1 | Build the lab | Nov 3 – Nov 7, 2026 | Complete (Nov 6; Day 5 available as buffer) |
-| 2 | Attack, detect, investigate | Nov 8 – Nov 12 | In progress (started early, Nov 6; 1 of 6 techniques complete) |
+| 2 | Attack, detect, investigate | Nov 8 – Nov 12 | In progress (2 of 6 techniques complete) |
 | 3 | AI-assisted triage | Nov 13 – Nov 17 | Not started |
 | 4 | Detection-as-Code and polish | Nov 18 – Nov 21 | Not started |
 | Buffer | Contingency | Nov 22 – Nov 24 | Unused |
@@ -351,7 +351,7 @@ Three observations from the baseline shape the detection work ahead:
 | ATT&CK ID | Technique | Atomic test | Prerequisites | Status |
 |---|---|---|---|---|
 | T1059.001 | PowerShell | -17 PowerShell Command Execution (`powershell.exe -e <Base64>`) | Met | **Executed; detected; alert saved** |
-| T1003.001 | LSASS memory | -2 Dump LSASS.exe memory using comsvcs.dll | Met | Pending |
+| T1003.001 | LSASS memory | -2 Dump LSASS.exe memory using comsvcs.dll | Met | **Executed; detected; alert saved** |
 | T1053.005 | Scheduled task | -2 Scheduled task Local (`schtasks /create`) | Met | Pending |
 | T1547.001 | Registry Run keys | -1 Reg Key Run | Met | Pending |
 | T1136.001 | Local account | -4 Create a new user in a command prompt | Met | Pending |
@@ -402,7 +402,64 @@ The regular expression matches a parameter introduced by `-` or `/` that is `e`,
 
 **Alerting.** The search was saved as the scheduled alert *T1059.001 - PowerShell Encoded Command* (hourly; trigger when results exceed zero, for each result; action: add to Triggered Alerts, severity High). Review of the saved object showed that the alert had initially captured an unrelated `stats` search open in the same session; the search was corrected and re-verified. Scheduled alerting is available during the Splunk Enterprise trial but not under the Free license.
 
-#### 4.2.3 Clock skew discovery and correction
+#### 4.2.3 Technique 2: T1003.001, LSASS credential dumping via comsvcs.dll
+
+**Execution.** Atomic test T1003.001-2 invokes a Windows built-in mechanism to dump LSASS memory:
+
+```
+rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump <lsass_pid> %TEMP%\lsass-comsvcs.dmp full
+```
+
+No external attack tool is involved; `comsvcs.dll` is a legitimate Windows DLL that exposes a `MiniDump` function. This technique is classified as **living off the land (LoLBin)**. Two attempts were made under different conditions.
+
+**Attempt 1 (20:04, Defender on): blocked by Defender.**
+
+Defender detected the malicious PowerShell command line before `rundll32.exe` could start and classified it as `Trojan:Win32/RundllLolBin.AF` (severity: Severe, category: Trojan). Key timeline:
+
+| Time | Event | Source |
+|---|---|---|
+| 20:04:26.827 | PowerShell with `rundll32 comsvcs.dll MiniDump ... full` launched | Security 4688 |
+| 20:04:27 | Defender detected `Trojan:Win32/RundllLolBin.AF` | Defender 1116 |
+| 20:04:27 | SecurityHealthHost.exe started (Defender notification) | Security 4688 |
+| 20:04:42 | Defender remediation completed | Defender 1117 |
+
+Sysmon Event 1 did not capture the PowerShell attempt, while Security 4688 did. This is consistent with the Day 4 baseline observation that the sysmon-modular config filters more process launches than the Security log. The Event 10 search showed no LSASS access, confirming that the attack was stopped before `rundll32` ran.
+
+**Attempt 2 (20:40, Defender real-time protection disabled): stopped by LSA protection.**
+
+Before the second attempt, Windows Defender real-time protection was disabled through the Windows Security UI. Defender logged this as **Event 5001** at 20:40:22.664 ("Real-time Protection scanning for malware and other potentially unwanted software was disabled"). This corresponds to MITRE ATT&CK technique **T1562.001, Impair Defenses**.
+
+With real-time protection off, `rundll32.exe` launched successfully and attempted to access LSASS. However, **no dump file was created**. LSA protection (also called Protected Process Light, or PPL) was confirmed as the cause:
+
+```powershell
+Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa | Select-Object RunAsPPL, RunAsPPLBoot
+# RunAsPPL: 2  RunAsPPLBoot: 2
+```
+
+The Windows event log confirmed LSASS started as a protected process at boot: *"LSASS.exe was started as a protected process with level: 4."* Under PPL, even a process running as Administrator cannot read LSASS memory without a signed kernel driver. The dump attempt was therefore defeated by a second, independent defense layer.
+
+| Attempt | Defender protection | Stopped by | Dump created | Detection fired |
+|---|---|---|---|---|
+| 1 (20:04) | On | Defender (Trojan:Win32/RundllLolBin.AF) | No | Yes (Security 4688) |
+| 2 (20:40) | Off (Event 5001 at 20:40:22) | LSA protection (RunAsPPL=2) | No | Yes (Security 4688 + Sysmon 1) |
+
+**Detection.**
+
+```
+index=sysmon ((EventCode=4688 Process_Command_Line="*comsvcs*") OR (EventCode=1 CommandLine="*comsvcs*"))
+| eval cmd=coalesce(Process_Command_Line, CommandLine)
+| where match(cmd, "(?i)minidump|#24")
+| table _time, host, EventCode, New_Process_Name, Image, cmd
+```
+
+The search covers both log sources and both tested forms of the command (full function name `MiniDump` and ordinal `#24`, a known evasion variant). It fires on **attempts**, including those blocked by Defender or LSA protection, because the command line is logged before execution completes. Validated: 2 of 2 true positives, 0 false positives over all indexed data. Saved as alert *T1003.001 - LSASS Dump via comsvcs.dll* (hourly, severity Critical).
+
+**Defender log integration.**
+
+Defender's operational log (`Microsoft-Windows-Windows Defender/Operational`) was added to the forwarder's `inputs.conf`. No permission fix was needed for this channel; the forwarder's service account could read it without modification. The first search confirmed 594 historical events, including Event 1116 (threat detected) and 1117 (action taken) for the LSASS attempt. A second alert, *Defender - Threat Detected* (EventCode 1116, hourly, severity High), was saved. Central SIEM logging of endpoint-protection events is especially important because the VM's local Defender log was lost when a snapshot was restored earlier in the session.
+
+#### 4.2.4 Clock skew discovery and correction
+
 
 When the validated detection was run over "Last 24 hours," it returned nothing, although it matched over "All time." The search window ended at 5:48 PM, while the attack events were stamped 8:31 PM: the events were about three hours in the future relative to Splunk. Comparing clocks confirmed the cause:
 
@@ -464,6 +521,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | 14 | Improved detection returned nothing | `\| regex` version of the search had no results | Not determined; the same pattern worked with `where match()` | Rewrote using `where match()` and confirmed field contents first | Test detections against a known-true event; zero results may mean a broken search. |
 | 15 | Real-time time range selected | "0 of 0 events matched" while running | "All time (real-time)" only shows newly arriving events | Selected the historical "All time" preset | Distinguish real-time from historical searches. |
 | 16 | Detection missed in "Last 24 hours" | Matched over All time but not over recent windows | VM UTC clock three hours fast after the time zone change | Enabled VMware Tools time sync, verified UTC, retook the pre-attack snapshot | Clock skew silently breaks time-windowed searches and alerts. |
+| 18 | Disk space exhausted on the host | Splunk refused to run searches: "minimum free disk space (5000MB) reached" | The Windows 11 ISO (5–6 GB) and six VM snapshots (some including 4 GB memory state) consumed almost all free space on C:, leaving 2.65 GB | Deleted the ISO (no longer needed) and four outdated snapshots through VMware Snapshot Manager; free space recovered to ~35 GB | Monitor host disk space; Defender log forwarding and high-event-volume indexing add pressure over time. |
 | 17 | Alert saved the wrong search | Saved alert contained `index=sysmon \| stats count by source` | Alert created while a different search was open | Edited the saved search and re-verified it in Settings | Review what a saved alert actually runs, not just its name. |
 
 ---
@@ -473,7 +531,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 1. **Isolation.** Adversary emulation runs only inside the VM. The NAT adapter is disconnected at the hypervisor before testing, and isolation is verified (internet unreachable, Splunk reachable) before each test session.
 2. **Least-privilege network access.** The host firewall admits TCP 9997 only from the host-only subnet 192.168.38.0/24.
    **Least-privilege agent.** The forwarder runs as a virtual service account with read-only access to exactly the channels it collects, rather than as LocalSystem.
-3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install," "Sysmon + logging," "Logging ready," "ART installed," and "Pre-attack v2 (isolated, clock synced)."
+3. **Recoverability.** Snapshots are taken before every change and every attack test; current snapshots are "Clean install" and "Pre-attack v3 (Defender log forwarded)" (others deleted to free disk space).
 4. **Scoped security exclusions.** The only Defender exclusion is the Atomic Red Team folder in the VM; when tooling outside it was blocked, the exclusion was not widened.
 5. **Hardware separation.** No host USB devices (webcam, fingerprint reader, storage) are passed through to the VM.
 6. **Supply-chain integrity.** Software is obtained only from official sources (Microsoft, Sysinternals, Splunk and Splunkbase, the original project repositories), published hashes are verified where available, and installer scripts are reviewed before execution.
@@ -491,6 +549,8 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 | Technique | Executed | Observed in | Detection | True positives | False positives (all data) |
 |---|---|---|---|---|---|
 | T1059.001 | Yes | Sysmon 1, PowerShell 4104 | Improved encoded-command search (Section 4.2.2) | 1 of 1 | 0 |
+| T1003.001 | Yes (×2) | Security 4688 (attempt 1), Security 4688 + Sysmon 1 (attempt 2) | comsvcs + MiniDump/#24 in cmd line; fires on attempts regardless of outcome | 2 of 2 | 0 |
+| T1562.001 (bonus) | Yes | Defender 5001 | Defender Event 5001 logged; detection pending | Captured | — |
 
 The detection proposed in the original plan for T1059.001 produced 0 of 1 true positives against the same data. Remaining contents (other techniques, LLM triage accuracy, Sigma conversion fidelity) will be added as the work is completed.
 
@@ -529,6 +589,7 @@ The detection proposed in the original plan for T1059.001 produced 0 of 1 true p
 | Nov 5, 2026 | Day 3: SIEM | Splunk Enterprise 10.6.1.1 installed; `sysmon` index; receiving on 9997 with a host-only firewall rule; Sysmon and Windows add-ons installed via CLI |
 | Nov 6, 2026 | Day 4: Forwarding | Universal Forwarder deployed; Sysmon channel access fixed; all three sources ingested; time zone corrected; "Logging ready" snapshot |
 | Nov 6, 2026 | Phase 2 start | Atomic Red Team installed; Defender blocked a test dependency; isolation verified; T1059.001 executed, investigated, and detected with an improved search; clock skew found and corrected; alert saved |
+| Nov 7, 2026 | Phase 2 session 2 | T1003.001 attempted twice: blocked by Defender (attempt 1), stopped by LSA protection with Defender off (attempt 2); detection validated (2/2 TP); Defender log forwarded; disk space exhausted and recovered |
 
 ## Appendix B: Artifact Index
 
@@ -536,9 +597,9 @@ The detection proposed in the original plan for T1059.001 produced 0 of 1 true p
 |---|---|---|
 | Sysmon configuration (verified) | `configs/sysmon/sysmonconfig.xml` | Committed and pushed |
 | Splunk receiver configuration | `configs/splunk/indexer/` | Added Day 3 |
-| Progress log | `docs/progress-log.md` | Current through Phase 2 start |
-| Universal Forwarder configuration | `configs/splunk/forwarder/` | Added Day 4 |
-| Detection searches | `detections/spl/` | T1059.001 added Nov 7 |
+| Progress log | `docs/progress-log.md` | Current through Phase 2 session 2 (Nov 7) |
+| Universal Forwarder configuration | `configs/splunk/forwarder/` | Added Day 4; Defender log added Nov 7 |
+| Detection searches | `detections/spl/` | T1059.001 (Nov 7), T1003.001 and Defender alert (Nov 7) |
 | Sigma rules | `rules/` | Pending |
 | Triage assistant | `triage/` | Pending |
 | Incident report and AI evaluation | `reports/` | Pending |
