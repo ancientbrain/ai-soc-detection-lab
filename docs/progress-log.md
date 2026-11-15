@@ -77,3 +77,13 @@
 - T1087.001: net user/localgroup enumeration; 10 events, excluded SYSTEM account; detection saved (0 FP)
 - Phase 2 complete: all 6 techniques executed, investigated, and detected; 7 alerts saved in Splunk
 - Next: Phase 3 - Python + Gemini triage assistant
+
+## 2026-11-15 (Phase 3) - AI-assisted triage assistant
+- Built Python + Gemini triage script (triage/triage.py); pulls events from Splunk REST API for all 7 detections
+- Model selection: went through gemini-2.0-flash, gemini-2.0-flash-lite before landing on gemini-3.5-flash-lite
+- Results: 3/7 correct, 2/7 partial, 2/7 wrong, 0 hallucinated
+- Root cause of failures: 10-event samples with noise diluted attack rows; Gemini analyzed visible events accurately but focused on majority (benign) activity
+- Key finding: alert quality determines triage quality; 1-event clean alerts got best results
+- Human review step confirmed: nothing actioned without analyst approval
+- Evaluation notes documented in triage/evaluation_notes.md
+- Next: Phase 4 - Sigma rules (Detection-as-Code) and polish
