@@ -130,7 +130,24 @@ soc-detection-lab/
 - **Sigma portability.** A rule written once converts to multiple SIEM platforms. The sysmon pipeline automates most of the field-mapping work, though Security log field extraction varies by configuration.
 
 ---
+## Evidence
 
+**Log pipeline — all four sources flowing into Splunk:**
+![Log sources](screenshots/splunk_log_sources_overview.png)
+
+**T1059.001 — encoded PowerShell detection catching the attack (1 result, 0 false positives):**
+![T1059.001 detection](screenshots/detection_T1059001_encoded_powershell.png)
+
+**All 7 Splunk alerts enabled:**
+![Alerts list](screenshots/splunk_alerts_list.png)
+
+**T1003.001 — Defender blocking LSASS dump (Trojan:Win32/RundllLolBin.AF, Severe) visible in Splunk:**
+![Defender blocked](screenshots/detection_T1003001_defender_blocked.png)
+
+**Sigma rule converting to Splunk SPL:**
+![Sigma conversion](screenshots/sigma_conversion_T1059001.png)
+
+---
 ## Full Technical Report
 
 A graduate-level technical report covering design decisions, implementation evidence, challenges and resolutions, and evaluation results is in [`reports/project-report.md`](reports/project-report.md).
