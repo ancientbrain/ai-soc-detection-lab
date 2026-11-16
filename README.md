@@ -1,4 +1,4 @@
-# AI-Assisted SOC Detection Lab
+# Assisted SOC Detection Lab
 
 **Author:** Satwika Maddukuri · M.S. Information Systems, Northeastern University (December 2026)
 **Repository:** Private during development · Made public November 2026
