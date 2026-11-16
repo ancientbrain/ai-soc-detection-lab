@@ -1,9 +1,9 @@
-# AI-Assisted SOC Detection Lab: Design, Implementation, and Evaluation of an Endpoint Detection Pipeline with LLM-Assisted Alert Triage
+# SOC Detection Lab: Design and Implementation of an Endpoint Detection Pipeline
 
 **Author:** Satwika Maddukuri
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Final report, version 1.0
+**Document status:** Final report, version 1.1
 **Last updated:** November 15, 2026 (all phases complete)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
@@ -12,7 +12,7 @@
 
 ## Abstract
 
-This project designs, builds, and evaluates a self-contained Security Operations Center (SOC) laboratory to study the full detection-engineering cycle end to end. A Windows 11 endpoint is instrumented with Sysmon and native Windows auditing; logs are forwarded to Splunk Enterprise via the Universal Forwarder. Six MITRE ATT&CK techniques are emulated with Atomic Red Team, and a detection is written, tuned, and validated for each one; all six achieve zero false positives against a baseline of more than 51,000 events. An LLM-based triage assistant is then built in Python using the Gemini API: it queries the Splunk REST API, sends structured prompts, and returns JSON-formatted verdicts that are evaluated against manual analysis. Three of seven alerts are triaged correctly (43%); both failures arise from noisy event samples rather than reasoning errors, and no hallucinations are observed. Finally, four detections are rewritten as Sigma rules and converted to Splunk SPL with sigma-cli. The project demonstrates that detection quality, forwarder permissions, endpoint-protection visibility, and event-sample quality each have measurable effects on SOC outcomes, and documents every challenge and resolution with evidence.
+This project designs and builds a self-contained Security Operations Center (SOC) laboratory to study the full detection-engineering cycle end to end. A Windows 11 endpoint is instrumented with Sysmon and native Windows auditing; logs are forwarded to Splunk Enterprise via the Universal Forwarder. Six MITRE ATT&CK techniques are emulated with Atomic Red Team, and a detection is written, tuned, and validated for each one; all six achieve zero false positives against a baseline of more than 51,000 events. Finally, four detections are rewritten as Sigma rules and converted to Splunk SPL with sigma-cli. The project demonstrates that detection quality, forwarder permissions, endpoint-protection visibility, and baseline tuning each have measurable effects on SOC outcomes, and documents every challenge and resolution with evidence.
 
 Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, Phases 1–3 are complete. The full telemetry pipeline, all six MITRE ATT&CK technique detections, and an evaluated LLM-based alert triage assistant are in place. Phase 4 (Detection-as-Code with Sigma) is in progress.
 
