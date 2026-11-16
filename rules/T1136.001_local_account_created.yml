@@ -1,0 +1,26 @@
+title: Local User Account Created
+id: d4e5f6a7-b8c9-0123-defa-234567890123
+status: experimental
+description: Detects creation of a new local user account via Security Event 4720.
+    Any unexpected account creation warrants investigation.
+references:
+    - https://attack.mitre.org/techniques/T1136/001/
+author: Satwika Maddukuri
+date: 2026-11-15
+tags:
+    - attack.persistence
+    - attack.t1136.001
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4720
+    filter_builtin:
+        SubjectUserName|contains:
+            - 'SYSTEM'
+            - 'NT AUTHORITY'
+    condition: selection and not filter_builtin
+falsepositives:
+    - Legitimate user account creation by administrators
+level: high

@@ -87,3 +87,11 @@
 - Human review step confirmed: nothing actioned without analyst approval
 - Evaluation notes documented in triage/evaluation_notes.md
 - Next: Phase 4 - Sigma rules (Detection-as-Code) and polish
+
+## 2026-11-15 (Phase 4) - Sigma rules and Detection-as-Code
+- Wrote 4 Sigma rules: T1059.001, T1053.005, T1547.001, T1136.001
+- Installed sysmon pipeline plugin (sigma plugin install sysmon)
+- Converted all 4 rules with sigma-cli (splunk backend + sysmon pipeline)
+- Validation: T1059.001, T1053.005, T1547.001 all return 1 TP with sigma-generated SPL
+- T1136.001: sigma output uses SubjectUserName which is not extracted in this Splunk config; EventCode=4720 (hand-written detection) works correctly; documented as known limitation
+- Next: write README, update resume
