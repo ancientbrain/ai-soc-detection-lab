@@ -1,9 +1,9 @@
 # SOC Detection Lab
 
 **Author:** Satwika Maddukuri · M.S. Information Systems, Northeastern University (December 2026)
-**Repository:** Private during development · Made public November 2026
+**Repository:** github.com/ancientbrain/soc-detection-lab
 
-A home SOC lab built to practise the full detection-engineering cycle: instrument an endpoint, simulate adversary techniques, write and tune detections, evaluate an LLM-based triage assistant, and manage detections as code. Every phase is documented with evidence, honest failure cases, and lessons learned.
+A home SOC lab built to practise the full detection-engineering cycle: instrument an endpoint, simulate adversary techniques, write and tune detections against real baseline data, and manage detections as code. Every phase is documented with evidence, honest failure cases, and lessons learned.
 
 ---
 
@@ -13,7 +13,6 @@ A home SOC lab built to practise the full detection-engineering cycle: instrumen
 flowchart LR
     subgraph Host["Host PC · Windows 11 · 16 GB RAM"]
         SPL["Splunk Enterprise 10.6.1.1\nreceiver 192.168.38.1:9997\nindex: sysmon"]
-        PY["Python triage assistant\ngoogle-genai · Gemini 3.5-flash-lite"]
     end
     subgraph VM["SOC-Win11 · Windows 11 Enterprise Eval"]
         SYS["Sysmon 15.22\nsysmon-modular config"]
@@ -24,8 +23,6 @@ flowchart LR
     ART -- simulates attacks --> SYS & WIN
     SYS & WIN --> UF
     UF -- host-only network\n192.168.38.0/24 --> SPL
-    SPL -- REST API --> PY
-    PY -- lab data only --> LLM["Gemini API"]
     VM -. NAT: downloads only\ndisconnected before attacks .-> NET["Internet"]
 ```
 
@@ -34,6 +31,7 @@ flowchart LR
 ## What I Built
 
 ### Phase 1 · Lab setup
+
 - Windows 11 Enterprise Evaluation VM in VMware Workstation Pro, isolated on a host-only network
 - Sysmon 15.22 with the [sysmon-modular](https://github.com/olafhartong/sysmon-modular) default config (SHA256 verified)
 - Splunk Enterprise 10.6.1.1 on the host with a dedicated `sysmon` index
@@ -61,34 +59,13 @@ Six MITRE ATT&CK techniques were simulated with [Atomic Red Team](https://github
 
 1. **Detection gap in a common rule.** The plan's original encoded-PowerShell search used `CommandLine="*-enc*"`. PowerShell also accepts `-e`, `-en`, and `-ec`. The textbook search returned 0 results against the actual attack; the improved regex-based detection returned 1. Zero false positives across 51,000+ baseline events.
 
-2. **Prevention without visibility.** The first LSASS dump attempt was blocked by Defender (`Trojan:Win32/RundllLolBin.AF`). Sysmon's filtered config missed the attempt; Security 4688 caught it. Without Defender's operational log in the SIEM, an analyst would not know an attack was attempted. Adding that log source closes the gap.
+2. **Prevention without visibility.** The first LSASS dump attempt was blocked by Defender (`Trojan:Win32/RundllLolBin.AF`). Sysmon's filtered config missed the attempt; Security 4688 caught it. Without Defender's operational log in the SIEM, an analyst would not know an attack was attempted.
 
 3. **Two independent prevention layers.** With Defender's real-time protection disabled, `rundll32.exe` launched and targeted LSASS, but no dump was created because **LSA protection** (`RunAsPPL=2`) was also active. The detection fired on both attempts regardless of which layer stopped the dump.
 
 4. **Detection tuning from real baseline data.** The Run key detection initially returned 16 false positives (Microsoft Edge registering its auto-launch key). Filtering on the writing process and account reduced it to 1 true positive with 0 false positives.
 
-### Phase 3 · AI-assisted triage
-
-A Python script (`triage/triage.py`) queries Splunk's REST API for each detection, sends up to 10 events to Gemini with a structured prompt, and saves the response with placeholder fields for the analyst's verdict. Nothing is actioned without human review.
-
-**Prompt design:** role, objective, constraints (use only provided data; say "insufficient data" if uncertain), and a mandatory JSON output schema (summary, MITRE technique, severity with rationale, next steps, confidence with rationale).
-
-**Evaluation results (7 alerts):**
-
-| Result | Count | Alerts |
-|---|---|---|
-| ✅ Correct | 3 | T1136.001, T1087.001, Defender |
-| ⚠️ Partial | 2 | T1003.001, T1053.005 |
-| ❌ Wrong | 2 | T1059.001, T1547.001 |
-| 🤔 Hallucinated | 0 | — |
-
-**Overall: 3/7 fully correct (43%), 5/7 usable (71%), 0 hallucinated.**
-
-**Root cause of failures:** both wrong responses came from 10-event samples containing noise (benign CompatTelRunner launches and Edge Run key writes). Gemini accurately described what it saw but reached the wrong conclusion because benign events outnumbered the attack row. Single-event alerts produced the best responses. The fix is to apply detection-level filters before sampling events for the LLM.
-
-**Key limitation documented:** both wrong responses carried `"confidence": "High"`. Confident wrong answers are the most operationally dangerous failure mode, reinforcing the mandatory human review step.
-
-### Phase 4 · Detection-as-Code
+### Phase 3 · Detection-as-Code
 
 Four detections were rewritten as [Sigma](https://github.com/SigmaHQ/sigma) rules in `rules/` and converted to Splunk SPL with sigma-cli 4.0.1 (Splunk backend, sysmon pipeline).
 
@@ -110,7 +87,7 @@ sigma convert -t splunk -p sysmon rules/T1059.001_powershell_encoded_command.yml
 ## Repository Structure
 
 ```
-ai-soc-detection-lab/
+soc-detection-lab/
 ├── configs/
 │   ├── splunk/
 │   │   ├── forwarder/      # inputs.conf, outputs.conf
@@ -124,10 +101,6 @@ ai-soc-detection-lab/
 ├── reports/
 │   └── project-report.md   # graduate-level technical report
 ├── rules/                  # 4 Sigma rules
-├── triage/
-│   ├── triage.py           # Gemini triage assistant
-│   ├── evaluation_notes.md # accuracy analysis and failure cases
-│   └── results/            # JSON triage output with human verdicts
 └── screenshots/
 ```
 
@@ -144,9 +117,6 @@ ai-soc-detection-lab/
 | Splunk Enterprise | 10.6.1.1 | SIEM |
 | Splunk Universal Forwarder | 10.6.1.1 | Log shipping |
 | Invoke-AtomicRedTeam | master branch | Adversary emulation |
-| Python | 3.14.6 | Triage script |
-| google-genai | latest | Gemini SDK |
-| Gemini | 3.5-flash-lite | LLM for triage |
 | sigma-cli | 4.0.1 | Sigma-to-SPL conversion |
 | pysigma-backend-splunk | 3.0.0 | Splunk backend for sigma-cli |
 
@@ -157,7 +127,6 @@ ai-soc-detection-lab/
 - **Telemetry pipeline engineering.** Deploying and troubleshooting a forwarder-to-SIEM pipeline end to end, including permissions, field extraction, and clock synchronisation.
 - **Detection engineering with real data.** Writing detections against a baseline exposes false positives that theoretical rules miss. Tuning from evidence is different from tuning from intuition.
 - **Defense in depth in practice.** Two independent prevention layers (Defender and LSA protection) each stopped the same credential-dump attack, and the detection fired regardless of which layer acted first.
-- **LLM triage limitations.** Confidence scores are unreliable. Noisy event samples produce confident wrong answers. Data quality upstream of the LLM matters more than prompt engineering.
 - **Sigma portability.** A rule written once converts to multiple SIEM platforms. The sysmon pipeline automates most of the field-mapping work, though Security log field extraction varies by configuration.
 
 ---
