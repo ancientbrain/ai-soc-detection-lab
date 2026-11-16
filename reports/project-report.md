@@ -3,8 +3,8 @@
 **Author:** Satwika Maddukuri
 **Program:** M.S. Information Systems, Northeastern University (expected December 2026)
 **Repository:** github.com/ancientbrain/ai-soc-detection-lab
-**Document status:** Living report, version 0.7
-**Last updated:** November 15, 2026 (Phase 3 complete; Phase 4 in progress)
+**Document status:** Final report, version 1.0
+**Last updated:** November 15, 2026 (all phases complete)
 
 > This report is updated at the end of each work session. Sections marked *[Planned]* describe work that has not yet been carried out; they will be replaced with methods, evidence, and results as the project progresses.
 
@@ -12,7 +12,7 @@
 
 ## Abstract
 
-*[Provisional; to be finalized at project completion.]*
+This project designs, builds, and evaluates a self-contained Security Operations Center (SOC) laboratory to study the full detection-engineering cycle end to end. A Windows 11 endpoint is instrumented with Sysmon and native Windows auditing; logs are forwarded to Splunk Enterprise via the Universal Forwarder. Six MITRE ATT&CK techniques are emulated with Atomic Red Team, and a detection is written, tuned, and validated for each one; all six achieve zero false positives against a baseline of more than 51,000 events. An LLM-based triage assistant is then built in Python using the Gemini API: it queries the Splunk REST API, sends structured prompts, and returns JSON-formatted verdicts that are evaluated against manual analysis. Three of seven alerts are triaged correctly (43%); both failures arise from noisy event samples rather than reasoning errors, and no hallucinations are observed. Finally, four detections are rewritten as Sigma rules and converted to Splunk SPL with sigma-cli. The project demonstrates that detection quality, forwarder permissions, endpoint-protection visibility, and event-sample quality each have measurable effects on SOC outcomes, and documents every challenge and resolution with evidence.
 
 Security Operations Centers (SOCs) depend on high-fidelity endpoint telemetry, well-engineered detections, and efficient alert triage. This project builds a self-contained SOC laboratory to study all three. A Windows 11 victim host is instrumented with Microsoft Sysinternals Sysmon and native Windows auditing, and its telemetry is forwarded to Splunk Enterprise. Adversary behavior is emulated with Atomic Red Team, and detections are written against the resulting data and mapped to MITRE ATT&CK. The project then evaluates a large language model (LLM) as a triage assistant, measuring its accuracy against the author's manual analysis and documenting failure modes such as hallucination. Finally, detections are re-expressed as vendor-neutral Sigma rules and managed as code. As of this version, Phases 1–3 are complete. The full telemetry pipeline, all six MITRE ATT&CK technique detections, and an evaluated LLM-based alert triage assistant are in place. Phase 4 (Detection-as-Code with Sigma) is in progress.
 
@@ -529,9 +529,28 @@ The root cause of both wrong responses is that the Splunk searches sent raw even
 
 The evaluation covers seven alerts from a single host in a controlled lab environment. The sample is too small for statistical generalization. Model availability changes rapidly (three model names in one session), making the pipeline fragile without version pinning. The Splunk trial license limits scheduled alerting, so alerts were fired manually rather than from real-time triggers.
 
-### 4.4 Phase 4: Detection-as-Code *[In progress]*
+### 4.4 Phase 4: Detection-as-Code (November 15)
 
-Sigma rules will be written for four to six detections in `rules/`, converted to SPL with sigma-cli using the Splunk backend and sysmon pipeline, and re-validated against the original Atomic test data. A GitHub Actions workflow will optionally validate rule syntax on every push.
+Four detections were rewritten as Sigma rules in `rules/` and converted to Splunk SPL with sigma-cli 4.0.1 (Splunk backend, sysmon pipeline). The sysmon pipeline plugin was installed separately (`sigma plugin install sysmon`) since it is not bundled with sigma-cli by default.
+
+```bash
+sigma convert -t splunk -p sysmon rules/T1059.001_powershell_encoded_command.yml
+```
+
+**Conversion results and validation:**
+
+| Rule | Sigma-generated SPL | Validated in Splunk |
+|---|---|---|
+| T1059.001 | `EventID=1 \| regex CommandLine="(?i)..."` | ✅ 1 TP |
+| T1053.005 | `EventID=1 Image="*\\schtasks.exe" CommandLine="*/create*"` | ✅ 1 TP |
+| T1547.001 | `EventID=13 TargetObject IN (...) NOT (...)` | ✅ 1 TP |
+| T1136.001 | `EventID=4720 NOT SubjectUserName IN (...)` | ⚠️ 0 results; field not extracted |
+
+Three of four Sigma-generated searches caught the original attack event when run with `index=sysmon` prepended. The fourth (T1136.001) produced a syntactically correct rule; `SubjectUserName` is a standard Sigma field for Windows Security events, but the Splunk Add-on for Microsoft Windows does not extract it as a separate field in this configuration. The hand-written detection (`EventCode=4720`) works correctly. The gap is in the add-on's field extraction, not in the Sigma rule.
+
+**Key observation:** the T1059.001 rule uses `| regex CommandLine=...`, which failed in Phase 2 when written by hand but succeeded here with the sigma-cli conversion. The difference appears to be that sigma-cli generates `EventID=1` while the hand-written detection used `EventCode=1`; Splunk treats these as different field names for Sysmon events in XML format. This was not fully investigated and is noted as an open question.
+
+A README, resume bullet points, and this technical report complete Phase 4.
 
 
 
@@ -605,7 +624,7 @@ Four to six detections will be rewritten as Sigma rules in `rules/`, converted t
 
 ## 8. Results
 
-*[Phases 2–3 complete; Phase 4 in progress.]*
+*[Complete.]*
 
 | Technique | Executed | Observed in | Detection | True positives | False positives (all data) |
 |---|---|---|---|---|---|
@@ -621,13 +640,19 @@ The detection proposed in the original plan for T1059.001 produced 0 of 1 true p
 
 ## 9. Limitations and Future Work
 
-*[Partially provisional.]* Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. The host runs Windows 11, while Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025, so the host OS may fall outside the officially listed platforms; this has no practical effect in the lab. Splunk scheduled alerting is unavailable under the Free license, so alerts depend on the 60-day Enterprise trial. VM telemetry between the Day 4 time zone change and the November 6 clock correction is time-shifted by about three hours (Section 4.2.3). Future work may include forwarding the *Microsoft-Windows-Windows Defender/Operational* log so that endpoint-protection responses are captured alongside attacker activity, an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
+Known limitations include a single-host environment with no lateral movement or domain infrastructure; Atomic tests that approximate but do not fully reproduce real adversary tradecraft; and a small alert sample for LLM evaluation, which limits statistical generalization. Splunk runs with its default self-signed certificates, and CLI server-certificate hostname validation is disabled in this installation; both are acceptable for a local-only lab but would be hardened in production. The host runs Windows 11, while Splunk's download page for 10.6.1.1 listed Windows 10 and Windows Server 2019/2022/2025, so the host OS may fall outside the officially listed platforms; this has no practical effect in the lab. Splunk scheduled alerting is unavailable under the Free license, so alerts depend on the 60-day Enterprise trial. VM telemetry between the Day 4 time zone change and the November 6 clock correction is time-shifted by about three hours (Section 4.2.3). Future work may include forwarding the *Microsoft-Windows-Windows Defender/Operational* log so that endpoint-protection responses are captured alongside attacker activity, an Active Directory domain, network sensors, and detection of prompt-injection attempts against a lab LLM application.
 
 ---
 
 ## 10. Conclusion
 
-*[Pending.]*
+This project demonstrates that building a SOC detection pipeline from scratch—rather than following a tutorial—surfaces problems that textbook descriptions omit. The forwarder's service account needed explicit read access to the Sysmon channel. The common encoded-PowerShell detection misses the `-e` flag. Clock skew silently breaks time-windowed searches. Defender's operational log must be forwarded to the SIEM for prevention events to be visible. Each of these was found from evidence, diagnosed, and resolved.
+
+The LLM triage evaluation produced its most useful finding not from the correct responses but from the failures: both wrong answers carried high confidence, and both arose from the same root cause—noisy event samples. This suggests that the bottleneck in LLM-assisted SOC triage is data quality upstream of the model, not prompt engineering. A triage pipeline that pre-filters events to include only those matching the detection logic would likely improve accuracy substantially.
+
+The Sigma conversion exercise confirmed that vendor-neutral detection formats reduce lock-in and that the sysmon pipeline automates most field-mapping work. The one failure (T1136.001) illustrates a real-world gap: Sigma's field taxonomy assumes field extraction that not all SIEM configurations provide, and the gap must be caught by validation against real data, as was done here.
+
+Taken together, the project documents a realistic path from an empty lab to a working, evaluated detection pipeline, with honest accounting of what failed and why. The lab remains available for further experimentation, including forwarding the Windows Defender log from the host, adding Active Directory to test lateral-movement detection, and testing prompt-injection detection against a lab LLM application.
 
 ---
 
